@@ -1,0 +1,24 @@
+{
+  "name": "payflow",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace @payflow/api\" \"npm run dev --workspace @payflow/web\"",
+    "build": "npm run build --workspace @payflow/api && npm run build --workspace @payflow/web",
+    "test": "npm run test --workspace @payflow/api && npm run test --workspace @payflow/web",
+    "lint": "npm run lint --workspace @payflow/api && npm run lint --workspace @payflow/web",
+    "format": "prettier --write .",
+    "setup:local": "powershell -ExecutionPolicy Bypass -File ./setup-local.ps1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.0.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.4.2",
+    "typescript-eslint": "^8.72.1"
+  }
+}
