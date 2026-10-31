@@ -112,6 +112,42 @@ describe('POST /api/v1/gateway/pix/receive', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/rest/v1/charges'))).toBe(true);
   });
 
+  it('does not return a Pix code when the provider marks the transaction as failed', async () => {
+    const fetchMock = mockSuccessfulRequests({
+      transactionId: 'provider-tx-failed',
+      status: 'OK',
+      transactionStatus: 'FAILED',
+      errorDescription: 'Transaction denied by anti-fraud',
+      fee: 5,
+      order: { id: 'provider-order-failed' },
+      pix: { code: 'unpayable-pix-code' },
+    });
+
+    const response = await (await app).inject({
+      method: 'POST',
+      url: endpoint,
+      headers,
+      payload: validPayload,
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      errorCode: 'PIX_CHARGE_NOT_PAYABLE',
+      message: 'Transaction denied by anti-fraud',
+    });
+    expect(response.json()).not.toHaveProperty('pix');
+
+    const failedChargeUpdate = fetchMock.mock.calls
+      .filter(([url, init]) => String(url).includes('/rest/v1/charges') && init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>)
+      .find((body) => body.status === 'FAILED');
+    expect(failedChargeUpdate).toMatchObject({
+      provider_transaction_id: 'provider-tx-failed',
+      status: 'FAILED',
+    });
+    expect(failedChargeUpdate).not.toHaveProperty('pix_copy_paste');
+  });
+
   it('uses the active Supabase link amount for public checkout', async () => {
     const fetchMock = vi.fn().mockImplementation((input: string | URL, init?: RequestInit) => {
       const url = String(input);

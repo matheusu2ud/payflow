@@ -45,6 +45,7 @@ const providerResponseSchema = z.object({
   transactionId: z.string().min(1),
   status: z.enum(['OK', 'FAILED', 'PENDING', 'REJECTED', 'CANCELED']),
   transactionStatus: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED', 'CHARGED_BACK', 'EXPIRED']).optional(),
+  errorDescription: z.string().nullable().optional(),
   fee: z.number().finite().nonnegative(),
   order: z.object({ id: z.string().min(1), url: z.string().url().optional() }).passthrough(),
   pix: z.object({ code: z.string().min(1), image: z.string().url().optional(), expiresAt: z.string().optional() }).passthrough(),
@@ -53,6 +54,9 @@ const providerResponseSchema = z.object({
 function persistedStatus(status: string) {
   if (status === 'COMPLETED' || status === 'FAILED' || status === 'REFUNDED' || status === 'CHARGED_BACK' || status === 'EXPIRED') {
     return status;
+  }
+  if (status === 'REJECTED' || status === 'CANCELED') {
+    return 'FAILED';
   }
   return 'PENDING';
 }
@@ -119,6 +123,32 @@ export async function createPersistedPixCharge(
 
   const provider = parsedProviderResponse.data;
   const status = persistedStatus(provider.transactionStatus ?? provider.status);
+  if (status !== 'PENDING') {
+    const { error: updateError } = await supabaseAdmin
+      .from('charges')
+      .update({
+        provider_transaction_id: provider.transactionId,
+        fee_cents: Math.round(provider.fee * 100),
+        status,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', chargeId);
+
+    if (updateError) {
+      throw new Error('Unable to save rejected provider Pix response');
+    }
+
+    return {
+      statusCode: 422,
+      body: {
+        statusCode: 422,
+        errorCode: 'PIX_CHARGE_NOT_PAYABLE',
+        message: provider.errorDescription?.trim()
+          || `O provedor retornou o status ${status}; esta cobranca nao possui um Pix disponivel para pagamento.`,
+      },
+    };
+  }
+
   const { error: updateError } = await supabaseAdmin
     .from('charges')
     .update({
