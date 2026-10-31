@@ -40,7 +40,7 @@ Start: npm run start --workspace @payflow/api
 
 Configure no Render as variaveis `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `POSEIDON_PUBLIC_KEY`, `POSEIDON_SECRET_KEY`, `PAYFLOW_ALLOWED_EMAILS` e `CORS_ORIGIN`. Em `CORS_ORIGIN`, informe o dominio exato publicado na Netlify (por exemplo, `https://seu-site.netlify.app`). O Render define a porta do servico automaticamente.
 
-Na Netlify, configure `VITE_API_URL` com a URL publica do servico Render (sem `/` no final), alem de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Use o comando `npm run build --workspace @payflow/web` e publique `apps/web/dist`. Depois de alterar variaveis `VITE_*`, faca um novo deploy do frontend.
+Na Netlify, a configuracao de build e publicacao esta em `netlify.toml`. Configure `VITE_API_URL` com a URL publica do servico Render (sem `/` no final), alem de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Depois de alterar variaveis `VITE_*`, faca um novo deploy do frontend.
 
 ## Fluxos reais implementados
 
