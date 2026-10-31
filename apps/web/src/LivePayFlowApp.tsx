@@ -24,8 +24,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { QRCodeSVG } from 'qrcode.react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import { apiUrl } from './lib/api';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { currentDate, dateTime, money, shortDate } from './lib/format.js';
 
@@ -62,6 +64,26 @@ const navItems: { to: string; label: string; icon: LucideIcon }[] = [
   { to: '/accounts', label: 'Saldos e repasses', icon: Wallet },
   { to: '/integrations', label: 'Integracoes', icon: Zap },
 ];
+
+async function readJsonResponse<T>(response: Response, fallbackMessage: string): Promise<T> {
+  const contentType = response.headers.get('content-type') ?? '';
+  const rawText = await response.text();
+
+  if (!rawText || !rawText.trim()) {
+    throw new Error(fallbackMessage);
+  }
+
+  const normalizedText = rawText.trim();
+  if (normalizedText.startsWith('<') || (!contentType.includes('application/json') && !normalizedText.startsWith('{') && !normalizedText.startsWith('['))) {
+    throw new Error('O servidor respondeu com HTML ou outro conteúdo inválido em vez de JSON. Verifique se a API está ativa e acessível.');
+  }
+
+  try {
+    return JSON.parse(normalizedText) as T;
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+}
 
 function getApiErrorMessage(body: ApiErrorResponse, fallback: string) {
   const details = body.details
@@ -225,7 +247,7 @@ function PixResultDialog({ result, onClose }: { result: PixResponse; onClose: ()
     try { await navigator.clipboard.writeText(result.pix.code); toast.success('Codigo Pix copiado.'); }
     catch { toast.error('Nao foi possivel copiar o codigo Pix.'); }
   }
-  return <div className="dialog-backdrop"><section className="dialog pix-result" role="dialog" aria-modal="true" aria-labelledby="pix-title"><div className="dialog-heading"><div><p className="eyebrow">RESPOSTA DO POSEIDON</p><h2 id="pix-title">{result.purpose === 'deposit' ? 'Pix para deposito criado' : 'Pix criado'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button></div><div className="pix-status"><StatusBadge status={result.status} /><span>Transacao {result.transactionId}</span></div>{result.pix.image && <img className="pix-qr-image" src={result.pix.image} alt="QR Code Pix fornecido pelo provedor" />}<label className="pix-code-label">Codigo Pix copia e cola<textarea readOnly value={result.pix.code} rows={4} /></label><button className="button button-primary pix-copy-button" onClick={() => void copyPix()}><Copy size={15} /> Copiar codigo Pix</button>{result.pix.expiresAt && <p className="connection-note">Expira em {dateTime(result.pix.expiresAt)}</p>}<p className="connection-note">{result.purpose === 'deposit' ? 'O deposito continua pendente. Nenhum saldo foi creditado; aguarde a confirmacao oficial do provedor.' : 'A cobranca fica pendente ate confirmacao recebida do provedor.'}</p></section></div>;
+  return <div className="dialog-backdrop"><section className="dialog pix-result" role="dialog" aria-modal="true" aria-labelledby="pix-title"><div className="dialog-heading"><div><p className="eyebrow">RESPOSTA DO POSEIDON</p><h2 id="pix-title">{result.purpose === 'deposit' ? 'Pix para deposito criado' : 'Pix criado'}</h2></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button></div><div className="pix-status"><StatusBadge status={result.status} /><span>Transacao {result.transactionId}</span></div><div className="pix-qr-code"><QRCodeSVG value={result.pix.code} size={220} level="M" /></div><label className="pix-code-label">Codigo Pix copia e cola<textarea readOnly value={result.pix.code} rows={4} /></label><button className="button button-primary pix-copy-button" onClick={() => void copyPix()}><Copy size={15} /> Copiar codigo Pix</button>{result.pix.expiresAt && <p className="connection-note">Expira em {dateTime(result.pix.expiresAt)}</p>}<p className="connection-note">{result.purpose === 'deposit' ? 'O deposito continua pendente. Nenhum saldo foi creditado; aguarde a confirmacao oficial do provedor.' : 'A cobranca fica pendente ate confirmacao recebida do provedor.'}</p></section></div>;
 }
 
 function CheckoutPage() {
@@ -238,9 +260,12 @@ function CheckoutPage() {
 
   useEffect(() => {
     let active = true;
-    void fetch(`/api/v1/checkout/${encodeURIComponent(id)}`)
+    void fetch(apiUrl(`/api/v1/checkout/${encodeURIComponent(id)}`))
       .then(async (response) => {
-        const body = await response.json() as { id?: string; name?: string; amount?: number; message?: string };
+        const body = await readJsonResponse<{ id?: string; name?: string; amount?: number; message?: string }>(
+          response,
+          'Resposta do servidor inválida ao consultar o link de pagamento.',
+        );
         if (!response.ok) throw new Error(body.message ?? 'Link de pagamento inexistente ou inativo.');
         if (!body.id || !body.name || typeof body.amount !== 'number') throw new Error('O provedor retornou dados invalidos para este link.');
         if (active) setLink({ id: body.id, name: body.name, amount: body.amount });
@@ -259,12 +284,12 @@ function CheckoutPage() {
     const formData = new FormData(event.currentTarget);
     const identifier = crypto.randomUUID();
     try {
-      const response = await fetch(`/api/v1/checkout/${encodeURIComponent(id)}/pix`, {
+      const response = await fetch(apiUrl(`/api/v1/checkout/${encodeURIComponent(id)}/pix`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ identifier, client: { name: String(formData.get('name')).trim(), email: String(formData.get('email')).trim(), phone: String(formData.get('phone') ?? '').trim() || undefined } }),
       });
-      const body = await response.json() as PixResponse & ApiErrorResponse;
+      const body = await readJsonResponse<PixResponse & ApiErrorResponse>(response, 'Resposta do provedor inválida.');
       if (!response.ok) throw new Error(getApiErrorMessage(body, 'O provedor nao aceitou a cobranca.'));
       setResult(body);
     } catch (requestError) {
@@ -274,7 +299,7 @@ function CheckoutPage() {
     }
   }
 
-  return <main className="checkout-page"><header className="checkout-brand"><img className="brand-mark brand-logo" src="/payflow-logo.jpg" alt="Logo PayFlow" /><span>PAYFLOW<small>CHECKOUT</small></span></header><section className="checkout-panel"><p className="eyebrow">PAGAMENTO PIX</p>{loadingLink ? <div className="loading-state"><span className="loading-spinner" /><p>Consultando link...</p></div> : error && !link ? <><h1>Link indisponivel</h1><p className="form-error">{error}</p></> : link && <><h1>{link.name}</h1><p className="checkout-amount">{money(link.amount)}</p>{result ? <><div className="pix-status"><StatusBadge status={result.status} /><span>Transacao {result.transactionId}</span></div>{result.pix.image && <img className="pix-qr-image" src={result.pix.image} alt="QR Code Pix fornecido pelo provedor" />}<label className="pix-code-label">Codigo Pix copia e cola<textarea readOnly value={result.pix.code} rows={4} /></label><button className="button button-primary checkout-submit" onClick={() => void navigator.clipboard.writeText(result.pix.code).then(() => toast.success('Codigo Pix copiado.'))}><Copy size={15} /> Copiar codigo Pix</button><p className="checkout-legal">Aguardando confirmacao do provedor. Nao feche esta tela antes de copiar o codigo.</p></> : <form className="form-stack" onSubmit={submit}><label>Nome<input name="name" autoComplete="name" required maxLength={120} /></label><label>E-mail<input name="email" type="email" autoComplete="email" required maxLength={160} /></label><label>Telefone <span className="optional-label">se exigido pelo provedor</span><input name="phone" autoComplete="tel" maxLength={30} /></label>{error && <p className="form-error">{error}</p>}<button type="submit" className="button button-primary checkout-submit" disabled={busy}>{busy ? 'Consultando provedor...' : 'Gerar cobranca Pix'} <ArrowUpRight size={16} /></button><p className="checkout-legal">O valor vem do link. O Pix sera criado pelo provedor.</p></form>}</>}</section><footer className="checkout-footer">Pagamento processado pelo provedor</footer></main>;
+  return <main className="checkout-page"><header className="checkout-brand"><img className="brand-mark brand-logo" src="/payflow-logo.jpg" alt="Logo PayFlow" /><span>PAYFLOW<small>CHECKOUT</small></span></header><section className="checkout-panel"><p className="eyebrow">PAGAMENTO PIX</p>{loadingLink ? <div className="loading-state"><span className="loading-spinner" /><p>Consultando link...</p></div> : error && !link ? <><h1>Link indisponivel</h1><p className="form-error">{error}</p></> : link && <><h1>{link.name}</h1><p className="checkout-amount">{money(link.amount)}</p>{result ? <><div className="pix-status"><StatusBadge status={result.status} /><span>Transacao {result.transactionId}</span></div><div className="pix-qr-code"><QRCodeSVG value={result.pix.code} size={220} level="M" /></div><label className="pix-code-label">Codigo Pix copia e cola<textarea readOnly value={result.pix.code} rows={4} /></label><button className="button button-primary checkout-submit" onClick={() => void navigator.clipboard.writeText(result.pix.code).then(() => toast.success('Codigo Pix copiado.'))}><Copy size={15} /> Copiar codigo Pix</button><p className="checkout-legal">Aguardando confirmacao do provedor. Nao feche esta tela antes de copiar o codigo.</p></> : <form className="form-stack" onSubmit={submit}><label>Nome<input name="name" autoComplete="name" required maxLength={120} /></label><label>E-mail<input name="email" type="email" autoComplete="email" required maxLength={160} /></label><label>Telefone <span className="optional-label">se exigido pelo provedor</span><input name="phone" autoComplete="tel" maxLength={30} /></label>{error && <p className="form-error">{error}</p>}<button type="submit" className="button button-primary checkout-submit" disabled={busy}>{busy ? 'Consultando provedor...' : 'Gerar cobranca Pix'} <ArrowUpRight size={16} /></button><p className="checkout-legal">O valor vem do link. O Pix sera criado pelo provedor.</p></form>}</>}</section><footer className="checkout-footer">Pagamento processado pelo provedor</footer></main>;
 }
 
 function Workspace({ client, session, onSignOut }: { client: SupabaseClient; session: Session; onSignOut: () => void }) {
@@ -344,12 +369,12 @@ function Workspace({ client, session, onSignOut }: { client: SupabaseClient; ses
         if ((!customer && (dialog === 'charge' || !name || !email || !phone || !document)) || !Number.isFinite(amount) || amount <= 0) {
           throw new Error(dialog === 'deposit' ? 'Informe seus dados e um valor valido.' : 'Selecione um cliente e informe um valor valido.');
         }
-        const response = await fetch('/api/v1/gateway/pix/receive', {
+        const response = await fetch(apiUrl('/api/v1/gateway/pix/receive'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({ identifier: crypto.randomUUID(), amount, client: { name, email, phone: phone || undefined, document } }),
         });
-        const body = await response.json() as PixResponse & ApiErrorResponse;
+        const body = await readJsonResponse<PixResponse & ApiErrorResponse>(response, 'Resposta do provedor inválida.');
         if (!response.ok) throw new Error(getApiErrorMessage(body, 'O provedor nao aceitou a cobranca.'));
         await refreshData();
         setDialog(null);

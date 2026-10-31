@@ -309,6 +309,8 @@ select:focus-visible {
 .pix-result { max-height: calc(100vh - 32px); overflow-y: auto; }
 .pix-status { display: flex; align-items: center; gap: 9px; margin: 16px 0; color: #96a4a0; font-size: 9px; overflow-wrap: anywhere; }
 .pix-qr-image { display: block; width: min(100%, 220px); aspect-ratio: 1; object-fit: contain; margin: 0 auto 15px; border: 1px solid var(--line); border-radius: 6px; background: white; }
+.pix-qr-code { display: grid; width: fit-content; margin: 0 auto 15px; padding: 10px; border-radius: 6px; background: white; }
+.pix-qr-code svg { display: block; max-width: 100%; height: auto; }
 .pix-code-label { display: grid; gap: 6px; color: #cbd6ce; font-size: 10px; font-weight: 600; }
 .pix-code-label textarea { width: 100%; resize: vertical; padding: 9px; border: 1px solid #344547; border-radius: 5px; background: #101a1c; color: #dce5df; font-family: Consolas, monospace; font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
 .pix-copy-button { width: 100%; margin-top: 10px; }
