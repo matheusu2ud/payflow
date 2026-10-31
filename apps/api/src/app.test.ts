@@ -115,8 +115,8 @@ describe('POST /api/v1/gateway/pix/receive', () => {
   it('does not return a Pix code when the provider marks the transaction as failed', async () => {
     const fetchMock = mockSuccessfulRequests({
       transactionId: 'provider-tx-failed',
-      status: 'OK',
-      transactionStatus: 'FAILED',
+      status: 'FAILED',
+      transactionStatus: 'PENDING',
       errorDescription: 'Transaction denied by anti-fraud',
       fee: 5,
       order: { id: 'provider-order-failed' },

@@ -122,7 +122,8 @@ export async function createPersistedPixCharge(
   }
 
   const provider = parsedProviderResponse.data;
-  const status = persistedStatus(provider.transactionStatus ?? provider.status);
+  const providerRejected = ['FAILED', 'REJECTED', 'CANCELED'].includes(provider.status);
+  const status = providerRejected ? 'FAILED' : persistedStatus(provider.transactionStatus ?? provider.status);
   if (status !== 'PENDING') {
     const { error: updateError } = await supabaseAdmin
       .from('charges')

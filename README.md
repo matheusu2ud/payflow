@@ -29,6 +29,19 @@ npm run dev --workspace @payflow/web
 
 Web: `http://localhost:5173` (ou a porta informada pelo Vite). API: `http://localhost:3333/health`.
 
+## Publicacao na Netlify e Render
+
+O frontend e a API sao servicos separados em producao. Publique a API como um servico Web no Render, usando a pasta do projeto como raiz, com os comandos:
+
+```text
+Build: npm ci && npm run build --workspace @payflow/api
+Start: npm run start --workspace @payflow/api
+```
+
+Configure no Render as variaveis `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `POSEIDON_PUBLIC_KEY`, `POSEIDON_SECRET_KEY`, `PAYFLOW_ALLOWED_EMAILS` e `CORS_ORIGIN`. Em `CORS_ORIGIN`, informe o dominio exato publicado na Netlify (por exemplo, `https://seu-site.netlify.app`). O Render define a porta do servico automaticamente.
+
+Na Netlify, configure `VITE_API_URL` com a URL publica do servico Render (sem `/` no final), alem de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Use o comando `npm run build --workspace @payflow/web` e publique `apps/web/dist`. Depois de alterar variaveis `VITE_*`, faca um novo deploy do frontend.
+
 ## Fluxos reais implementados
 
 - Login e criacao de conta via Supabase Auth, com nome completo e telefone salvos nos metadados do usuario.

@@ -12,3 +12,6 @@ dist
 apps/api/prisma/dev.db
 apps/api/prisma/*.db
 apps/api/prisma/migrations/**/migration_lock.toml
+
+# Local Netlify folder
+.netlify
