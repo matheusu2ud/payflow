@@ -48,7 +48,7 @@ describe('POST /api/v1/gateway/pix/receive', () => {
       transactionStatus: 'PENDING',
       fee: 5,
       order: { id: 'provider-order-1' },
-      pix: { code: 'pix-copy-code' },
+      pix: { code: ' \npix-copy-code \r\n' },
     };
     const fetchMock = vi.fn().mockImplementation((input: string | URL, init?: RequestInit) => {
       const url = String(input);
@@ -110,6 +110,11 @@ describe('POST /api/v1/gateway/pix/receive', () => {
       body: JSON.stringify(validPayload),
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/rest/v1/charges'))).toBe(true);
+    const chargeUpdate = fetchMock.mock.calls
+      .filter(([url, init]) => String(url).includes('/rest/v1/charges') && init?.method === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>)
+      .find((body) => body.pix_copy_paste);
+    expect(chargeUpdate?.pix_copy_paste).toBe('pix-copy-code');
   });
 
   it('does not return a Pix code when the provider marks the transaction as failed', async () => {
