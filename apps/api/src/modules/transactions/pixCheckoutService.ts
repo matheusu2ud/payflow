@@ -50,7 +50,7 @@ const providerResponseSchema = z.object({
   order: z.object({ id: z.string().min(1), url: z.string().optional() }).passthrough(),
   pix: z.object({
     code: z.string()
-      .transform((value) => value.trim().replace(/^https?:\/\//i, ''))
+      .transform((value) => value.trim().replace(/^(?:https?:\/\/)+\s*/i, ''))
       .pipe(z.string().min(1)),
     image: z.string().optional(),
     expiresAt: z.string().optional(),

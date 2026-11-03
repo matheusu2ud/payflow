@@ -48,7 +48,7 @@ describe('POST /api/v1/gateway/pix/receive', () => {
       transactionStatus: 'PENDING',
       fee: 5,
       order: { id: 'provider-order-1' },
-      pix: { code: ' \nhttp://000201pix-copy-code \r\n' },
+      pix: { code: ' \nhttps://000201pix-copy-code \r\n' },
     };
     const fetchMock = vi.fn().mockImplementation((input: string | URL, init?: RequestInit) => {
       const url = String(input);

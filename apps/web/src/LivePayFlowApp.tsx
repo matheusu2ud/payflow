@@ -28,6 +28,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { apiUrl } from './lib/api';
+import { normalizePixCopyPaste } from './lib/pix';
 import { isSupabaseConfigured, supabase } from './lib/supabase';
 import { currentDate, dateTime, money, shortDate } from './lib/format.js';
 
@@ -103,7 +104,7 @@ function fromChargeRow(row: Record<string, unknown>): Charge {
     amount: Number(row.amount_cents) / 100,
     fee: Number(row.fee_cents ?? 0) / 100,
     status: String(row.status) as ChargeStatus,
-    pixCode: typeof row.pix_copy_paste === 'string' ? row.pix_copy_paste : null,
+    pixCode: typeof row.pix_copy_paste === 'string' ? normalizePixCopyPaste(row.pix_copy_paste) : null,
     pixImage: typeof row.pix_image_url === 'string' ? row.pix_image_url : null,
     pixExpiresAt: typeof row.pix_expires_at === 'string' ? row.pix_expires_at : null,
     createdAt: String(row.created_at),
@@ -243,7 +244,7 @@ function CreateDialog({ kind, customers, charges, onClose, onSubmit }: { kind: D
 }
 
 function PixResultDialog({ result, onClose }: { result: PixResponse; onClose: () => void }) {
-  const pixCode = result.pix.code;
+  const pixCode = normalizePixCopyPaste(result.pix.code);
   async function copyPix() {
     try { await navigator.clipboard.writeText(pixCode); toast.success('Codigo Pix copiado.'); }
     catch { toast.error('Nao foi possivel copiar o codigo Pix.'); }
@@ -300,7 +301,7 @@ function CheckoutPage() {
     }
   }
 
-  const pixCode = result?.pix.code ?? '';
+  const pixCode = result ? normalizePixCopyPaste(result.pix.code) : '';
   return <main className="checkout-page"><header className="checkout-brand"><img className="brand-mark brand-logo" src="/payflow-logo.jpg" alt="Logo PayFlow" /><span>PAYFLOW<small>CHECKOUT</small></span></header><section className="checkout-panel"><p className="eyebrow">PAGAMENTO PIX</p>{loadingLink ? <div className="loading-state"><span className="loading-spinner" /><p>Consultando link...</p></div> : error && !link ? <><h1>Link indisponivel</h1><p className="form-error">{error}</p></> : link && <><h1>{link.name}</h1><p className="checkout-amount">{money(link.amount)}</p>{result ? <><div className="pix-status"><StatusBadge status={result.status} /><span>Transacao {result.transactionId}</span></div><div className="pix-qr-code"><QRCodeSVG value={pixCode} size={220} level="M" /></div><label className="pix-code-label">Codigo Pix copia e cola<textarea readOnly value={pixCode} rows={4} /></label><button className="button button-primary checkout-submit" onClick={() => void navigator.clipboard.writeText(pixCode).then(() => toast.success('Codigo Pix copiado.'))}><Copy size={15} /> Copiar codigo Pix</button><p className="checkout-legal">Aguardando confirmacao do provedor. Nao feche esta tela antes de copiar o codigo.</p></> : <form className="form-stack" onSubmit={submit}><label>Nome<input name="name" autoComplete="name" required maxLength={120} /></label><label>E-mail<input name="email" type="email" autoComplete="email" required maxLength={160} /></label><label>Telefone <span className="optional-label">se exigido pelo provedor</span><input name="phone" autoComplete="tel" maxLength={30} /></label>{error && <p className="form-error">{error}</p>}<button type="submit" className="button button-primary checkout-submit" disabled={busy}>{busy ? 'Consultando provedor...' : 'Gerar cobranca Pix'} <ArrowUpRight size={16} /></button><p className="checkout-legal">O valor vem do link. O Pix sera criado pelo provedor.</p></form>}</>}</section><footer className="checkout-footer">Pagamento processado pelo provedor</footer></main>;
 }
 
