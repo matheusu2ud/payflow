@@ -48,7 +48,7 @@ describe('POST /api/v1/gateway/pix/receive', () => {
       transactionStatus: 'PENDING',
       fee: 5,
       order: { id: 'provider-order-1' },
-      pix: { code: ' \npix-copy-code \r\n' },
+      pix: { code: ' \nhttp://000201pix-copy-code \r\n' },
     };
     const fetchMock = vi.fn().mockImplementation((input: string | URL, init?: RequestInit) => {
       const url = String(input);
@@ -102,7 +102,7 @@ describe('POST /api/v1/gateway/pix/receive', () => {
     const response = await (await app).inject({ method: 'POST', url: endpoint, headers, payload: validPayload });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ transactionId: 'provider-tx-1', status: 'PENDING', pix: { code: 'pix-copy-code' } });
+    expect(response.json()).toMatchObject({ transactionId: 'provider-tx-1', status: 'PENDING', pix: { code: '000201pix-copy-code' } });
     const providerCall = fetchMock.mock.calls.find(([url]) => String(url).includes('poseidonpay.site'));
     expect(providerCall?.[1]).toMatchObject({
       method: 'POST',
@@ -114,7 +114,7 @@ describe('POST /api/v1/gateway/pix/receive', () => {
       .filter(([url, init]) => String(url).includes('/rest/v1/charges') && init?.method === 'PATCH')
       .map(([, init]) => JSON.parse(String(init?.body)) as Record<string, unknown>)
       .find((body) => body.pix_copy_paste);
-    expect(chargeUpdate?.pix_copy_paste).toBe('pix-copy-code');
+    expect(chargeUpdate?.pix_copy_paste).toBe('000201pix-copy-code');
   });
 
   it('does not return a Pix code when the provider marks the transaction as failed', async () => {

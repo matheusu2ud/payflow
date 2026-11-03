@@ -49,9 +49,9 @@ const providerResponseSchema = z.object({
   fee: z.number().finite().nonnegative(),
   order: z.object({ id: z.string().min(1), url: z.string().optional() }).passthrough(),
   pix: z.object({
-    // Sanitiza o codigo Pix: remove espacos, quebras de linha e caracteres invisiveis
-    // que causam falha ao colar no app do banco
-    code: z.string().transform((value) => value.replace(/\s+/g, '').trim()),
+    code: z.string()
+      .transform((value) => value.trim().replace(/^https?:\/\//i, ''))
+      .pipe(z.string().min(1)),
     image: z.string().optional(),
     expiresAt: z.string().optional(),
   }).passthrough(),
