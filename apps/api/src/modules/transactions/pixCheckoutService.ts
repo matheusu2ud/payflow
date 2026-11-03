@@ -48,7 +48,13 @@ const providerResponseSchema = z.object({
   errorDescription: z.string().nullable().optional(),
   fee: z.number().finite().nonnegative(),
   order: z.object({ id: z.string().min(1), url: z.string().url().optional() }).passthrough(),
-  pix: z.object({ code: z.string().trim().min(1), image: z.string().url().optional(), expiresAt: z.string().optional() }).passthrough(),
+  pix: z.object({
+    // Sanitiza o codigo Pix: remove espacos, quebras de linha e caracteres invisiveis
+    // que causam falha ao colar no app do banco
+    code: z.string().transform((value) => value.replace(/\s+/g, '').trim()),
+    image: z.string().url().optional(),
+    expiresAt: z.string().optional(),
+  }).passthrough(),
 }).passthrough();
 
 function persistedStatus(status: string) {
