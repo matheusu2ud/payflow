@@ -47,12 +47,12 @@ const providerResponseSchema = z.object({
   transactionStatus: z.enum(['PENDING', 'COMPLETED', 'FAILED', 'REFUNDED', 'CHARGED_BACK', 'EXPIRED']).optional(),
   errorDescription: z.string().nullable().optional(),
   fee: z.number().finite().nonnegative(),
-  order: z.object({ id: z.string().min(1), url: z.string().url().optional() }).passthrough(),
+  order: z.object({ id: z.string().min(1), url: z.string().optional() }).passthrough(),
   pix: z.object({
     // Sanitiza o codigo Pix: remove espacos, quebras de linha e caracteres invisiveis
     // que causam falha ao colar no app do banco
     code: z.string().transform((value) => value.replace(/\s+/g, '').trim()),
-    image: z.string().url().optional(),
+    image: z.string().optional(),
     expiresAt: z.string().optional(),
   }).passthrough(),
 }).passthrough();
