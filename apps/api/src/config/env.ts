@@ -16,8 +16,10 @@ const envSchema = z.object({
   SUPABASE_ANON_KEY: z.string().optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   POSEIDON_API_URL: z.string().url().default('https://app.poseidonpay.site/api/v1/gateway/pix/receive'),
+  POSEIDON_TRANSFER_API_URL: z.string().url().default('https://app.poseidonpay.site/api/v1/gateway/transfers'),
   POSEIDON_PUBLIC_KEY: z.string().min(1).optional(),
   POSEIDON_SECRET_KEY: z.string().min(1).optional(),
+  TRUST_PROXY: z.enum(['0', '1']).default('0').transform((value) => value === '1'),
   PAYFLOW_ALLOWED_EMAILS: z.string().default(''),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
 });

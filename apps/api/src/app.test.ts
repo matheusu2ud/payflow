@@ -194,4 +194,113 @@ describe('POST /api/v1/gateway/pix/receive', () => {
     const providerCall = fetchMock.mock.calls.find(([url]) => String(url).includes('poseidonpay.site'));
     expect(JSON.parse(String(providerCall?.[1]?.body))).toMatchObject({ amount: 129, products: [{ name: 'Plano Real', price: 129 }] });
   });
+
+  it('creates an authenticated Pix transfer and does not expose the webhook token', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string | URL) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/user')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'd1f6c7f0-8266-4f69-a9a8-39a0e44a31fc',
+          email: 'owner@example.com',
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (url.endsWith('/api/v1/gateway/transfers')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          webhookToken: 'must-not-reach-browser',
+          withdraw: {
+            id: 'withdraw-test-1',
+            amount: 50,
+            feeAmount: 2,
+            currency: 'BRL',
+            status: 'PENDING',
+            rejectedReason: '',
+            createdAt: '2026-11-03T00:00:00.000Z',
+            updatedAt: '2026-11-03T00:00:00.000Z',
+          },
+          payoutAccount: { id: 'account-test-1' },
+          sents: [],
+          receiptUrl: 'https://example.com/receipt',
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await (await app).inject({
+      method: 'POST',
+      url: '/api/v1/gateway/transfers',
+      headers,
+      payload: {
+        identifier: '7c1a2502-bd45-4a56-a8b8-2e5a90794001',
+        amount: 50,
+        pix: { type: 'email', key: 'Payee@Example.com' },
+        owner: {
+          name: 'João da Silva',
+          document: { type: 'cpf', number: '123.456.789-01' },
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      withdraw: { id: 'withdraw-test-1', amount: 50, feeAmount: 2, status: 'PENDING' },
+    });
+    expect(response.json()).not.toHaveProperty('webhookToken');
+    const providerCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/api/v1/gateway/transfers'));
+    const transferBody = JSON.parse(String(providerCall?.[1]?.body));
+    expect(transferBody).toMatchObject({
+      amount: 50,
+      discountFeeOfReceiver: true,
+      pix: { type: 'email', key: 'payee@example.com' },
+      owner: { name: 'Joao da Silva', document: { type: 'cpf', number: '12345678901' } },
+    });
+    expect(transferBody.owner.ip).toMatch(/^\d{1,3}(?:\.\d{1,3}){3}$/);
+    expect(providerCall?.[1]?.headers).toMatchObject({
+      'x-public-key': 'provider-public-test',
+      'x-secret-key': 'provider-secret-test',
+    });
+  });
+
+  it('returns the provider insufficient-balance error without claiming a transfer was created', async () => {
+    const fetchMock = vi.fn().mockImplementation((input: string | URL) => {
+      const url = String(input);
+      if (url.includes('/auth/v1/user')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          id: 'd1f6c7f0-8266-4f69-a9a8-39a0e44a31fc',
+          email: 'owner@example.com',
+        }), { status: 200, headers: { 'content-type': 'application/json' } }));
+      }
+      if (url.endsWith('/api/v1/gateway/transfers')) {
+        return Promise.resolve(new Response(JSON.stringify({
+          statusCode: 400,
+          errorCode: 'INSUFFICIENT_FUNDS',
+          message: 'Saldo insuficiente.',
+        }), { status: 400, headers: { 'content-type': 'application/json' } }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const response = await (await app).inject({
+      method: 'POST',
+      url: '/api/v1/gateway/transfers',
+      headers,
+      payload: {
+        identifier: 'c5dfe6e7-d0ea-47f4-a778-1bbabf2f429f',
+        amount: 50,
+        pix: { type: 'email', key: 'payee@example.com' },
+        owner: {
+          name: 'Joao da Silva',
+          document: { type: 'cpf', number: '12345678901' },
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      errorCode: 'INSUFFICIENT_FUNDS',
+      message: 'Saldo insuficiente.',
+    });
+    expect(response.json()).not.toHaveProperty('withdraw');
+  });
 });

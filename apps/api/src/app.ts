@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { env } from './config/env.js';
 import { createPersistedPixCharge, createPixCheckout, getPixCheckoutLink, pixCheckoutRequestSchema } from './modules/transactions/pixCheckoutService.js';
 import { pixReceiveRequestSchema } from './modules/transactions/pixReceiveService.js';
+import { createPixTransfer, pixTransferRequestSchema } from './modules/transactions/pixTransferService.js';
 
 function isConfigured(value: string | undefined): value is string {
   return Boolean(value && !/SEU_PROJETO|sua_|placeholder|change_me/i.test(value));
@@ -20,6 +21,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     : null;
 
   const app = fastify({
+    trustProxy: env.TRUST_PROXY,
     logger: {
       level: env.NODE_ENV === 'production' ? 'info' : 'debug',
       ...(env.NODE_ENV !== 'production' && {
@@ -186,6 +188,76 @@ export async function buildApp(): Promise<FastifyInstance> {
         statusCode: 502,
         errorCode: 'GATEWAY_PROVIDER_UNAVAILABLE',
         message: 'Não foi possível concluir a solicitação Pix no provedor.',
+      });
+    }
+  });
+
+  app.post('/api/v1/gateway/transfers', async (request, reply) => {
+    if (!supabaseAuth) {
+      return reply.code(503).send({
+        statusCode: 503,
+        errorCode: 'TRANSFER_AUTH_NOT_CONFIGURED',
+        message: 'Configure o Supabase Auth no ambiente da API antes de solicitar saques.',
+      });
+    }
+
+    const bearerToken = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (!bearerToken) {
+      return reply.code(401).send({
+        statusCode: 401,
+        errorCode: 'GATEWAY_UNAUTHORIZED',
+        message: 'Uma sessao Supabase valida e obrigatoria.',
+      });
+    }
+
+    const { data: authData, error: authError } = await supabaseAuth.auth.getUser(bearerToken);
+    if (authError || !authData.user?.email) {
+      return reply.code(401).send({
+        statusCode: 401,
+        errorCode: 'GATEWAY_UNAUTHORIZED',
+        message: 'A sessao Supabase e invalida ou expirou.',
+      });
+    }
+
+    const allowedEmails = env.PAYFLOW_ALLOWED_EMAILS.split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+    if (!allowedEmails.includes(authData.user.email.toLowerCase())) {
+      return reply.code(403).send({
+        statusCode: 403,
+        errorCode: 'GATEWAY_FORBIDDEN',
+        message: 'Esta conta nao esta autorizada para solicitar saques.',
+      });
+    }
+
+    const parsedRequest = pixTransferRequestSchema.safeParse(request.body);
+    if (!parsedRequest.success) {
+      return reply.code(400).send({
+        statusCode: 400,
+        errorCode: 'TRANSFER_INVALID_DATA',
+        message: 'Dados do saque invalidos.',
+        details: parsedRequest.error.issues.map((issue) => ({
+          path: issue.path.join('.'),
+          error: { message: issue.message },
+        })),
+      });
+    }
+
+    if (!isConfigured(env.POSEIDON_PUBLIC_KEY) || !isConfigured(env.POSEIDON_SECRET_KEY)) {
+      return reply.code(503).send({
+        statusCode: 503,
+        errorCode: 'TRANSFER_PROVIDER_NOT_CONFIGURED',
+        message: 'Configure as credenciais Poseidon no ambiente da API.',
+      });
+    }
+
+    try {
+      const result = await createPixTransfer(parsedRequest.data, request.ip);
+      return reply.code(result.statusCode).send(result.body);
+    } catch (error) {
+      request.log.error({ err: error }, 'Poseidon Pix transfer failed');
+      return reply.code(502).send({
+        statusCode: 502,
+        errorCode: 'TRANSFER_PROVIDER_UNAVAILABLE',
+        message: 'Nao foi possivel confirmar o resultado do saque. Consulte o painel Poseidon antes de tentar novamente.',
       });
     }
   });

@@ -38,7 +38,7 @@ Build: npm ci && npm run build --workspace @payflow/api
 Start: npm run start --workspace @payflow/api
 ```
 
-Configure no Render as variaveis `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `POSEIDON_PUBLIC_KEY`, `POSEIDON_SECRET_KEY`, `PAYFLOW_ALLOWED_EMAILS` e `CORS_ORIGIN`. Em `CORS_ORIGIN`, informe o dominio exato publicado na Netlify (por exemplo, `https://seu-site.netlify.app`). O Render define a porta do servico automaticamente.
+Configure no Render as variaveis `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `POSEIDON_PUBLIC_KEY`, `POSEIDON_SECRET_KEY`, `PAYFLOW_ALLOWED_EMAILS`, `CORS_ORIGIN` e `TRUST_PROXY=1`. Em `CORS_ORIGIN`, informe o dominio exato publicado na Netlify (por exemplo, `https://seu-site.netlify.app`). `TRUST_PROXY=1` permite que a API obtenha o IPv4 do solicitante atraves do proxy do Render, exigido pela API de transferencias Poseidon. O Render define a porta do servico automaticamente.
 
 Na Netlify, a configuracao de build e publicacao esta em `netlify.toml`. Configure `VITE_API_URL` com a URL publica do servico Render (sem `/` no final), alem de `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`. Depois de alterar variaveis `VITE_*`, faca um novo deploy do frontend.
 
@@ -48,6 +48,7 @@ Na Netlify, a configuracao de build e publicacao esta em `netlify.toml`. Configu
 - Clientes, links, cobrancas e recibos persistidos no Supabase, com politicas RLS por usuario.
 - Checkout Pix por link: o servidor busca o link e o valor no banco, chama o Poseidon com segredos do backend e salva a resposta.
 - Criacao de cobranca Pix autenticada e restrita por allowlist de e-mail.
+- Saques Pix autenticados pela API Poseidon de transferencias; a chave secreta permanece no backend e o provedor rejeita pedidos sem saldo suficiente.
 - Solicitacao de deposito via Pix pelo gateway; a operacao fica pendente e nao cria saldo interno.
 - Aviso no fluxo de links: nao e necessario saldo previo para criar um link, mas recebimentos dependem do Pix habilitado na conta Poseidon.
 - O frontend nao pode gravar status de pagamento; cobranças so aparecem como concluidas quando o provedor retorna esse status.
@@ -63,6 +64,6 @@ npm audit
 
 ## Limites de integracao
 
-O callback/webhook de confirmacao do Poseidon ainda depende do contrato de notificacao do provedor, que nao foi fornecido. Sem ele, o dashboard nao deve presumir que um Pix pendente foi pago. Repasses bancarios, saldo bancario e emissao de NFS-e tambem exigem provedores e credenciais especificos.
+O saldo da conta Poseidon nao e consultado antecipadamente; a API do provedor valida o saldo ao receber a solicitacao e rejeita a transferencia se for insuficiente. O status de saque retornado e exibido imediatamente, mas a atualizacao posterior de status depende da configuracao do webhook de transferencia. O callback/webhook de confirmacao do Pix tambem depende do contrato de notificacao do provedor. Sem essas confirmacoes, o dashboard nao deve presumir que um Pix pendente foi pago ou que um saque pendente foi concluido. Repasses bancarios e emissao de NFS-e tambem exigem provedores e credenciais especificos.
 
 A opcao “Depositar via Pix” gera uma cobranca para a conta recebedora configurada no gateway. Ela nao credita saldo no PayFlow: a confirmacao oficial do provedor e uma integracao de carteira ainda precisam ser configuradas.

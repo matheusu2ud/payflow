@@ -51,9 +51,10 @@ type Customer = { id: string; name: string; email: string; phone: string; create
 type PaymentLink = { id: string; name: string; amount: number; status: 'ACTIVE' | 'PAID' | 'PAUSED'; createdAt: string };
 type SavedDocument = { id: string; title: string; type: 'RECEIPT' | 'PAYMENT_CONFIRMATION'; createdAt: string; chargeId: string };
 type LiveData = { charges: Charge[]; customers: Customer[]; links: PaymentLink[]; documents: SavedDocument[] };
-type DialogKind = 'charge' | 'deposit' | 'link' | 'customer' | 'document';
+type DialogKind = 'charge' | 'deposit' | 'link' | 'customer' | 'document' | 'withdraw';
 type PixResponse = { chargeId: string; transactionId: string; status: ChargeStatus; fee: number; purpose?: 'charge' | 'deposit'; pix: { code: string; image?: string; expiresAt?: string } };
 type ApiErrorResponse = { message?: string; details?: { path?: string; error?: { message?: string } }[] };
+type TransferResponse = { withdraw: { id: string; amount: number; feeAmount: number; currency: string; status: 'PENDING' | 'COMPLETED' | 'CANCELED' | 'PROCESSING' | 'TRANSFERRING'; rejectedReason?: string; createdAt: string; updatedAt: string }; receiptUrl?: string };
 
 const emptyData: LiveData = { charges: [], customers: [], links: [], documents: [] };
 const navItems: { to: string; label: string; icon: LucideIcon }[] = [
@@ -130,6 +131,7 @@ function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
     COMPLETED: 'Concluido', PENDING: 'Pendente', FAILED: 'Falhou', REFUNDED: 'Reembolsado',
     CHARGED_BACK: 'Contestado', EXPIRED: 'Expirado', CANCELED: 'Cancelado', ACTIVE: 'Ativo', PAUSED: 'Pausado', PAID: 'Pago',
+    PROCESSING: 'Processando', TRANSFERRING: 'Transferindo',
   };
   return <span className={`status-badge ${className}`}><span className="status-dot" />{labels[status] ?? status}</span>;
 }
@@ -222,25 +224,32 @@ function DocumentsPage({ documents, charges, openDialog, onDownload }: { documen
   return <div className="page-stack"><PageHeading eyebrow="RECIBOS" title="Documentos" description="Recibos vinculados a cobrancas confirmadas no banco." action={<button className="button button-primary" onClick={() => openDialog('document')} disabled={!charges.some((charge) => charge.status === 'COMPLETED')}><Plus size={16} /> Gerar recibo</button>} /><section className="surface document-surface">{documents.length ? <div className="document-list">{documents.map((document) => { const charge = charges.find((item) => item.id === document.chargeId); return <div className="document-row" key={document.id}><div className="document-mark"><FileText size={18} /></div><div className="document-details"><strong>{document.title}</strong><span>{document.type === 'RECEIPT' ? 'Recibo' : 'Comprovante'} · {dateTime(document.createdAt)}{charge ? ` · ${money(charge.amount)}` : ''}</span></div><button className="icon-button" onClick={() => onDownload(document)} aria-label={`Baixar ${document.title}`} title="Baixar arquivo"><ArrowDownToLine size={17} /></button></div>; })}</div> : <EmptyState title="Nenhum recibo" message="O recibo so pode ser criado para uma cobranca confirmada pelo provedor." />}</section><div className="notice notice-amber"><FileText size={17} /><p><strong>Nota fiscal:</strong> NFS-e exige integracao com provedor fiscal autorizado. Este modulo gera apenas recibos de pagamento.</p></div></div>;
 }
 
-function AccountsPage({ charges }: { charges: Charge[] }) {
+function AccountsPage({ charges, openDialog }: { charges: Charge[]; openDialog: (kind: DialogKind) => void }) {
   const completed = charges.filter((charge) => charge.status === 'COMPLETED').reduce((sum, charge) => sum + charge.amount - charge.fee, 0);
-  return <div className="page-stack"><PageHeading eyebrow="LIQUIDACAO" title="Saldos e repasses" description="Valores derivados de cobrancas confirmadas. Saldo bancario exige integracao bancaria propria." /><section className="metric-grid account-metrics"><MetricCard label="Liquido de cobrancas confirmadas" value={money(completed)} note="Total pago menos taxas registradas" icon={Wallet} tone="mint" /><MetricCard label="Conta bancaria" value="Nao conectada" note="Nenhum saldo externo consultado" icon={ShieldCheck} tone="gold" /><MetricCard label="Repasses" value="Indisponivel" note="Este provedor Pix nao oferece saque nesta integracao" icon={ArrowUpRight} tone="coral" /></section><div className="notice notice-amber"><ShieldCheck size={17} /><p>O valor liquido e uma soma dos registros confirmados, nao um saldo bancario nem uma garantia de liquidacao.</p></div></div>;
+  return <div className="page-stack"><PageHeading eyebrow="LIQUIDACAO" title="Saldos e repasses" description="Solicite transferencias Pix; a Poseidon verifica o saldo da conta antes de aceitar o saque." action={<button className="button button-primary" onClick={() => openDialog('withdraw')}><ArrowUpRight size={16} /> Sacar via Pix</button>} /><section className="metric-grid account-metrics"><MetricCard label="Liquido de cobrancas confirmadas" value={money(completed)} note="Estimativa historica, nao representa saldo sacavel" icon={Wallet} tone="mint" /><MetricCard label="Saldo na Poseidon" value="Verificado no saque" note="A Poseidon rejeita a transferencia se nao houver saldo" icon={ShieldCheck} tone="gold" /><MetricCard label="Transferencias" value="Pix" note="Taxa descontada do valor recebido" icon={ArrowUpRight} tone="coral" /></section><div className="notice notice-amber"><ShieldCheck size={17} /><p>O valor liquido exibido e apenas uma estimativa de cobrancas. O saldo disponivel nao e consultado antecipadamente; a Poseidon valida o saldo real ao receber o pedido e rejeita o saque se for insuficiente.</p></div></div>;
 }
 
 function IntegrationsPage() {
   return <div className="page-stack"><PageHeading eyebrow="CONFIGURACAO" title="Integracoes" description="Estado dos servicos usados pelo painel e pelo checkout." /><section className="integration-list"><article className="integration-row"><div className="integration-logo database-logo">DB</div><div className="integration-copy"><div><h2>Supabase Auth e Postgres</h2><span className="integration-status">Sessao ativa</span></div><p>Clientes, links, cobrancas e recibos usam tabelas com Row Level Security por usuario.</p><code>supabase/migrations/20261028000001_gateway_tables.sql</code></div><StatusBadge status="ACTIVE" /></article><article className="integration-row"><div className="integration-logo poseidon-logo">P</div><div className="integration-copy"><div><h2>Poseidon Pay · Pix</h2><span className="integration-status">Checkout no backend</span></div><p>Credenciais ficam no ambiente do servidor. O pagamento permanece pendente ate confirmacao do provedor.</p><code>POSEIDON_PUBLIC_KEY · POSEIDON_SECRET_KEY</code></div><StatusBadge status="PENDING" /></article><article className="integration-row"><div className="integration-logo webhook-logo"><Activity size={19} /></div><div className="integration-copy"><div><h2>Confirmacao de status</h2><span className="integration-status">Webhook necessita homologacao</span></div><p>Para atualizar cobrancas depois do pagamento, configure o callback oficial do Poseidon e valide o webhookToken.</p><code>Callback HTTPS · assinatura do provedor</code></div><StatusBadge status="PENDING" /></article></section></div>;
 }
 
-function CreateDialog({ kind, customers, charges, onClose, onSubmit }: { kind: DialogKind; customers: Customer[]; charges: Charge[]; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  const titles = { charge: 'Criar cobranca Pix', deposit: 'Depositar via Pix', link: 'Criar link Pix', customer: 'Adicionar cliente', document: 'Gerar recibo' };
+function CreateDialog({ kind, customers, charges, busy, onClose, onSubmit }: { kind: DialogKind; customers: Customer[]; charges: Charge[]; busy: boolean; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const titles = { charge: 'Criar cobranca Pix', deposit: 'Depositar via Pix', link: 'Criar link Pix', customer: 'Adicionar cliente', document: 'Gerar recibo', withdraw: 'Sacar via Pix' };
   return <div className="dialog-backdrop"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title"><div className="dialog-heading"><div><p className="eyebrow">SUPABASE + POSEIDON</p><h2 id="dialog-title">{titles[kind]}</h2></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button></div><form className="form-stack" onSubmit={onSubmit}>
     {kind === 'charge' && <><label>Cliente<select name="customerId" required defaultValue=""><option value="" disabled>Selecione um cliente</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name} · {customer.email}</option>)}</select></label><div className="form-grid"><label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00" /></label><label>Metodo<input value="PIX" readOnly /></label></div></>}
     {kind === 'deposit' && <><label>Seu nome<input name="name" required maxLength={120} autoComplete="name" /></label><label>Seu e-mail<input name="email" type="email" required maxLength={160} autoComplete="email" /></label><label>CPF ou CNPJ<input name="document" required maxLength={20} autoComplete="off" placeholder="Somente numeros ou com pontuacao" /></label><label>Telefone<input name="phone" type="tel" required maxLength={30} autoComplete="tel" placeholder="(11) 99999-9999" /></label><label>Valor do deposito (R$)<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00" /></label><p className="connection-note">Informe os dados exigidos pelo gateway. O Pix fica pendente ate confirmacao; os limites de valor dependem da sua conta Poseidon. Esta solicitacao nao credita saldo no PayFlow.</p></>}
     {kind === 'link' && <><div className="notice notice-amber"><ShieldCheck size={17} /><p><strong>Criação de link bloqueada</strong><br />Conforme a exigência da sua conta, é necessário já ter movimentado dinheiro antes de criar links de pagamento. O PayFlow não consegue verificar essa movimentação automaticamente. Depois de movimentar a conta, confirme a liberação com a Poseidon e solicite a reativação desta opção. Até lá, o botão de confirmação permanece desabilitado.</p></div><label>Nome do produto ou servico<input name="name" required maxLength={80} placeholder="Ex.: Consultoria" /></label><label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00" /></label></>}
     {kind === 'customer' && <><label>Nome completo<input name="name" required maxLength={120} placeholder="Nome do cliente" /></label><label>E-mail<input name="email" type="email" required maxLength={160} placeholder="cliente@empresa.com" /></label><label>Telefone<input name="phone" type="tel" maxLength={30} placeholder="(11) 99999-9999" /></label></>}
     {kind === 'document' && <><label>Cobranca confirmada<select name="chargeId" required defaultValue=""><option value="" disabled>Selecione</option>{charges.filter((charge) => charge.status === 'COMPLETED').map((charge) => <option key={charge.id} value={charge.id}>{charge.identifier} · {charge.customer} · {money(charge.amount)}</option>)}</select></label><label>Tipo<select name="type" defaultValue="RECEIPT"><option value="RECEIPT">Recibo</option><option value="PAYMENT_CONFIRMATION">Comprovante</option></select></label></>}
-    <div className="dialog-actions"><button type="button" className="button button-quiet" onClick={onClose}>Cancelar</button><button type="submit" className="button button-primary" disabled={kind === 'link'}><Check size={15} />{kind === 'link' ? 'Bloqueado' : 'Confirmar'}</button></div>
+    {kind === 'withdraw' && <><div className="notice notice-amber"><ShieldCheck size={17} /><p>A Poseidon verifica o saldo real da conta ao processar o pedido. Se não houver saldo suficiente, o saque será rejeitado. A taxa será descontada do valor recebido.</p></div><label>Valor do saque (R$)<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00" /></label><label>Tipo da chave Pix<select name="pixType" required defaultValue="email"><option value="cpf">CPF</option><option value="cnpj">CNPJ</option><option value="phone">Telefone</option><option value="email">E-mail</option><option value="random">Chave aleatória</option></select></label><label>Chave Pix<input name="pixKey" required maxLength={254} autoComplete="off" /></label><label>Nome do titular<input name="ownerName" required maxLength={100} autoComplete="name" /></label><label>Tipo de documento do titular<select name="documentType" required defaultValue="cpf"><option value="cpf">CPF</option><option value="cnpj">CNPJ</option></select></label><label>Número do documento<input name="documentNumber" required maxLength={32} autoComplete="off" /></label><p className="connection-note">O nome será enviado sem acentos conforme exigência da Poseidon. Se a chave Pix for CPF/CNPJ, ela deve ser do mesmo titular e corresponder ao documento informado.</p></>}
+    <div className="dialog-actions"><button type="button" className="button button-quiet" onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className="button button-primary" disabled={kind === 'link' || busy}><Check size={15} />{kind === 'link' ? 'Bloqueado' : busy ? 'Enviando...' : kind === 'withdraw' ? 'Solicitar saque' : 'Confirmar'}</button></div>
   </form></section></div>;
+}
+
+function TransferResultDialog({ result, onClose }: { result: TransferResponse; onClose: () => void }) {
+  const { withdraw } = result;
+  const recipientAmount = Math.max(0, withdraw.amount - withdraw.feeAmount);
+  return <div className="dialog-backdrop"><section className="dialog" role="dialog" aria-modal="true" aria-labelledby="transfer-title"><div className="dialog-heading"><div><p className="eyebrow">RESPOSTA DA POSEIDON</p><h2 id="transfer-title">Solicitação de saque enviada</h2></div><button className="icon-button" onClick={onClose} aria-label="Fechar"><X size={18} /></button></div><div className="pix-status"><StatusBadge status={withdraw.status} /><span>Saque {withdraw.id}</span></div><div className="surface"><p>Valor solicitado: <strong>{money(withdraw.amount)}</strong></p><p>Taxa descontada: <strong>{money(withdraw.feeAmount)}</strong></p><p>Valor estimado a receber: <strong>{money(recipientAmount)}</strong></p></div><p className="connection-note">{withdraw.status === 'COMPLETED' ? 'A Poseidon informou que a transferência foi concluída.' : 'O saque ainda não está concluído. Acompanhe o status no painel da Poseidon.'}</p>{result.receiptUrl && <a className="button button-secondary" href={result.receiptUrl} target="_blank" rel="noreferrer">Abrir comprovante <ExternalLink size={14} /></a>}<div className="dialog-actions"><button className="button button-primary" onClick={onClose}>Fechar</button></div></section></div>;
 }
 
 function PixResultDialog({ result, onClose }: { result: PixResponse; onClose: () => void }) {
@@ -312,6 +321,8 @@ function Workspace({ client, session, onSignOut }: { client: SupabaseClient; ses
   const [loading, setLoading] = useState(true);
   const [dialog, setDialog] = useState<DialogKind | null>(null);
   const [pixResult, setPixResult] = useState<PixResponse | null>(null);
+  const [transferResult, setTransferResult] = useState<TransferResponse | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   async function refreshData() {
     setLoading(true);
@@ -353,7 +364,32 @@ function Workspace({ client, session, onSignOut }: { client: SupabaseClient; ses
     }
     const form = event.currentTarget;
     const formData = new FormData(form);
+    setSubmitting(true);
     try {
+      if (dialog === 'withdraw') {
+        const response = await fetch(apiUrl('/api/v1/gateway/transfers'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            identifier: crypto.randomUUID(),
+            amount: Number(formData.get('amount')),
+            pix: { type: String(formData.get('pixType')), key: String(formData.get('pixKey')).trim() },
+            owner: {
+              name: String(formData.get('ownerName')).trim(),
+              document: {
+                type: String(formData.get('documentType')),
+                number: String(formData.get('documentNumber')).trim(),
+              },
+            },
+          }),
+        });
+        const body = await readJsonResponse<TransferResponse & ApiErrorResponse>(response, 'Resposta da Poseidon invalida.');
+        if (!response.ok) throw new Error(getApiErrorMessage(body, 'A Poseidon nao aceitou o saque.'));
+        setDialog(null);
+        setTransferResult(body);
+        return;
+      }
+
       if (dialog === 'customer') {
         const { error } = await client.from('customers').insert({ name: String(formData.get('name')).trim(), email: String(formData.get('email')).trim().toLowerCase(), phone: String(formData.get('phone') ?? '').trim() });
         if (error) throw error;
@@ -398,6 +434,8 @@ function Workspace({ client, session, onSignOut }: { client: SupabaseClient; ses
       await refreshData();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'A operacao falhou.');
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -414,7 +452,7 @@ function Workspace({ client, session, onSignOut }: { client: SupabaseClient; ses
   }
 
   return <div className="app-shell"><aside className="sidebar"><Link to="/dashboard" className="brand-lockup"><img className="brand-mark brand-logo" src="/payflow-logo.jpg" alt="Logo PayFlow" /><span>PAYFLOW<small>PAYMENTS PLATFORM</small></span></Link><div className="workspace-chip"><span className="workspace-avatar">{(session.user.email ?? 'PF').slice(0, 2).toUpperCase()}</span><span><strong>{session.user.email}</strong><small>Conta conectada</small></span></div><p className="nav-caption">CONTA</p><nav className="side-nav" aria-label="Navegacao principal">{navItems.map(({ to, label, icon: Icon }) => <NavLink key={to} to={to} className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}><Icon size={17} strokeWidth={1.8} /><span>{label}</span>{to === '/charges' && <span className="nav-count">{data.charges.length}</span>}</NavLink>)}</nav><div className="sidebar-bottom"><div className="security-note"><ShieldCheck size={16} /><span><strong>Dados protegidos por RLS</strong><small>Escopo isolado pela sessao Supabase.</small></span></div><button className="reset-button" onClick={onSignOut}><LogOut size={14} /> Sair da conta</button></div></aside>
-    <div className="main-column"><header className="topbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{pageTitle}</strong></div><div className="topbar-right"><span className="live-indicator"><span />CONECTADO</span><span className="topbar-date">{currentDate({ day: '2-digit', month: 'short', year: 'numeric' })}</span><div className="user-avatar" title={session.user.email}>{(session.user.email ?? 'PF').slice(0, 2).toUpperCase()}</div></div></header><main className="main-content">{loading ? <div className="loading-state"><span className="loading-spinner" /><p>Carregando dados protegidos...</p></div> : <Routes><Route path="/" element={<Navigate to="/dashboard" replace />} /><Route path="/dashboard" element={<DashboardPage data={data} openDialog={setDialog} />} /><Route path="/charges" element={<ChargesPage charges={data.charges} openDialog={setDialog} />} /><Route path="/links" element={<LinksPage links={data.links} openDialog={setDialog} />} /><Route path="/customers" element={<CustomersPage customers={data.customers} charges={data.charges} openDialog={setDialog} />} /><Route path="/documents" element={<DocumentsPage documents={data.documents} charges={data.charges} openDialog={setDialog} onDownload={downloadDocument} />} /><Route path="/accounts" element={<AccountsPage charges={data.charges} />} /><Route path="/integrations" element={<IntegrationsPage />} /></Routes>}<footer className="app-footer"><span>PayFlow · Conta Supabase</span><span>Pagamentos e status sincronizados com o provedor</span></footer></main></div>{dialog && <CreateDialog kind={dialog} customers={data.customers} charges={data.charges} onClose={() => setDialog(null)} onSubmit={createRecord} />}{pixResult && <PixResultDialog result={pixResult} onClose={() => setPixResult(null)} />}</div>;
+    <div className="main-column"><header className="topbar"><div className="breadcrumb"><span>Workspace</span><span>/</span><strong>{pageTitle}</strong></div><div className="topbar-right"><span className="live-indicator"><span />CONECTADO</span><span className="topbar-date">{currentDate({ day: '2-digit', month: 'short', year: 'numeric' })}</span><div className="user-avatar" title={session.user.email}>{(session.user.email ?? 'PF').slice(0, 2).toUpperCase()}</div></div></header><main className="main-content">{loading ? <div className="loading-state"><span className="loading-spinner" /><p>Carregando dados protegidos...</p></div> : <Routes><Route path="/" element={<Navigate to="/dashboard" replace />} /><Route path="/dashboard" element={<DashboardPage data={data} openDialog={setDialog} />} /><Route path="/charges" element={<ChargesPage charges={data.charges} openDialog={setDialog} />} /><Route path="/links" element={<LinksPage links={data.links} openDialog={setDialog} />} /><Route path="/customers" element={<CustomersPage customers={data.customers} charges={data.charges} openDialog={setDialog} />} /><Route path="/documents" element={<DocumentsPage documents={data.documents} charges={data.charges} openDialog={setDialog} onDownload={downloadDocument} />} /><Route path="/accounts" element={<AccountsPage charges={data.charges} openDialog={setDialog} />} /><Route path="/integrations" element={<IntegrationsPage />} /></Routes>}<footer className="app-footer"><span>PayFlow · Conta Supabase</span><span>Pagamentos e status sincronizados com o provedor</span></footer></main></div>{dialog && <CreateDialog kind={dialog} customers={data.customers} charges={data.charges} busy={submitting} onClose={() => setDialog(null)} onSubmit={createRecord} />}{pixResult && <PixResultDialog result={pixResult} onClose={() => setPixResult(null)} />}{transferResult && <TransferResultDialog result={transferResult} onClose={() => setTransferResult(null)} />}</div>;
 }
 
 function copyText(value: string) {
